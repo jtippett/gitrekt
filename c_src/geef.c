@@ -195,51 +195,45 @@ geef_error(ErlNifEnv *env)
 
 	return enif_make_tuple2(env, atoms.error, enif_make_binary(env, &bin));
 }
-
 ERL_NIF_TERM
 geef_error_struct(ErlNifEnv *env, int code)
 {
-	ERL_NIF_TERM struct_term;
-	ERL_NIF_TERM keys[] = {
-		atoms.estruct,
-		atoms.ex,
-		atoms.emsg,
-		atoms.ecode
-	};
+    ERL_NIF_TERM struct_term;
+    ERL_NIF_TERM keys[] = {
+        atoms.estruct,
+        atoms.ex,
+        atoms.emsg,
+        atoms.ecode
+    };
 
-	const git_error *error;
-	ErlNifBinary bin;
-	size_t len;
+    const git_error *error = giterr_last();
+    if (!error)
+        return enif_make_tuple2(env, atoms.error, atoms.eunknown);
 
-	error = giterr_last();
+    size_t len = strlen(error->message);
+    ErlNifBinary bin;
+    if (!enif_alloc_binary(len, &bin))
+        return geef_oom(env);
 
-	if (!error)
-		return enif_make_tuple2(env, atoms.error, atoms.eunknown);
+    memcpy(bin.data, error->message, len);
+    ERL_NIF_TERM values[] = {
+        atoms.emod,
+        atoms.true,
+        enif_make_binary(env, &bin),
+        enif_make_int(env, code)
+    };
 
-	if (error->klass == GITERR_NOMEMORY)
-		return geef_oom(env);
+    // Correctly handle the return value of enif_make_map_from_arrays
+    int map_creation_status = enif_make_map_from_arrays(env, keys, values, 4, &struct_term);
+    if (map_creation_status < 0) {
+        // If map creation fails, return a general error
+        return geef_error(env);
+    }
 
-	if (!error->message)
-		return enif_make_tuple2(env, atoms.error, atoms.eunknown);
-
-	len = strlen(error->message);
-	if (!enif_alloc_binary(len, &bin))
-		return geef_oom(env);
-
-	memcpy(bin.data, error->message, len);
-	ERL_NIF_TERM values[] = {
-		atoms.emod,
-		atoms.true,
-		enif_make_binary(env, &bin),
-		enif_make_int(env, code)
-	};
-
-	error = enif_make_map_from_arrays(env, keys, values, 4, &struct_term);
-	if (error < 0)
-		return geef_error_struct(env, error);
-
-	return enif_make_tuple2(env, atoms.error, struct_term);
+    // Return the error map if map creation was successful
+    return enif_make_tuple2(env, atoms.error, struct_term);
 }
+
 
 ERL_NIF_TERM
 geef_oom(ErlNifEnv *env)
